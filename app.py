@@ -118,10 +118,15 @@ with tabs[0]:
     # Row 2 Charts
     c3, c4 = st.columns(2)
     with c3:
+       # Row 2 Charts
+    c3, c4 = st.columns(2)
+    with c3:
         st.write("### Trend by Fiscal Year")
         if fy_col and hours_col and not filtered_df.empty:
-            chart_data = filtered_df.groupby(fy_col)[hours_col].sum().reset_index()
-            st.line_chart(chart_data, x=fy_col, y=hours_col)
+            # Group data and set the Fiscal Year column as the index
+            chart_data = filtered_df.groupby(fy_col)[hours_col].sum().to_frame()
+            # Passing the dataframe directly avoids the Altair shorthand parser bug
+            st.line_chart(chart_data)
         else:
             st.info("Fiscal Year tracking data unavailable.")
             
