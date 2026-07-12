@@ -85,4 +85,44 @@ with tabs[0]:
     
     # Safely Calculate KPI Numbers
     tot_vols = len(volunteers_df) if not volunteers_df.empty else 0
-    tot_hours = filtered_df[hours_col].sum() if (hours_
+    tot_hours = filtered_df[hours_col].sum() if (hours_col and not filtered_df.empty) else 0
+    tot_value = filtered_df[value_col].sum() if (value_col and not filtered_df.empty) else 0
+    act_progs = filtered_df[prog_col].nunique() if (prog_col and not filtered_df.empty) else 0
+    
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Total Volunteers", f"{tot_vols:,}")
+    m2.metric("Total Hours", f"{tot_hours:,.0f}")
+    m3.metric("Total Value", f"${tot_value:,.2f}")
+    m4.metric("Programs Active", f"{act_progs}")
+    
+    st.write("---")
+    
+    # Row 1 Charts
+    c1, c2 = st.columns(2)
+    with c1:
+        st.write("### Hours by Program")
+        if prog_col and hours_col and not filtered_df.empty:
+            chart_data = filtered_df.groupby(prog_col)[hours_col].sum().reset_index()
+            chart_data.columns = ['Program', 'Hours']
+            st.bar_chart(chart_data, x='Program', y='Hours')
+        else:
+            st.info("Missing program tracking data.")
+            
+    with c2:
+        st.write("### By Volunteer Type")
+        if type_col and hours_col and not filtered_df.empty:
+            chart_data = filtered_df.groupby(type_col)[hours_col].sum().reset_index()
+            chart_data.columns = ['Type', 'Hours']
+            st.bar_chart(chart_data, x='Type', y='Hours')
+        else:
+            st.info("Volunteer type data unavailable in program history.")
+
+    # Row 2 Charts
+    c3, c4 = st.columns(2)
+    with c3:
+        st.write("### Trend by Fiscal Year")
+        if fy_col and hours_col and not filtered_df.empty:
+            chart_data = filtered_df.groupby(fy_col)[hours_col].sum().reset_index()
+            chart_data.columns = ['Fiscal Year', 'Hours']
+            chart_data['Fiscal Year'] = chart_data['Fiscal Year'].astype(str)
+            st.line_chart(
