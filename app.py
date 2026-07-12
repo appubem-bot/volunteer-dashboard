@@ -89,4 +89,56 @@ with tabs[0]:
     tot_value = filtered_df[value_col].sum() if (value_col and not filtered_df.empty) else 0
     act_progs = filtered_df[prog_col].nunique() if (prog_col and not filtered_df.empty) else 0
     
-    m1, m2, m3, m4 = st
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Total Volunteers", f"{tot_vols:,}")
+    m2.metric("Total Hours", f"{tot_hours:,.0f}")
+    m3.metric("Total Value", f"${tot_value:,.2f}")
+    m4.metric("Programs Active", f"{act_progs}")
+    
+    st.write("---")
+    
+    # Row 1 Charts
+    c1, c2 = st.columns(2)
+    with c1:
+        st.write("### Hours by Program")
+        if prog_col and hours_col and not filtered_df.empty:
+            chart_data = filtered_df.groupby(prog_col)[hours_col].sum().reset_index()
+            st.bar_chart(chart_data, x=prog_col, y=hours_col)
+        else:
+            st.info("Missing program tracking data.")
+            
+    with c2:
+        st.write("### By Volunteer Type")
+        if type_col and hours_col and not filtered_df.empty:
+            chart_data = filtered_df.groupby(type_col)[hours_col].sum().reset_index()
+            st.bar_chart(chart_data, x=type_col, y=hours_col)
+        else:
+            st.info("Volunteer type data unavailable in program history.")
+
+    # Row 2 Charts
+    c3, c4 = st.columns(2)
+    with c3:
+        st.write("### Trend by Fiscal Year")
+        if fy_col and hours_col and not filtered_df.empty:
+            chart_data = filtered_df.groupby(fy_col)[hours_col].sum().reset_index()
+            st.line_chart(chart_data, x=fy_col, y=hours_col)
+        else:
+            st.info("Fiscal Year tracking data unavailable.")
+            
+    with c4:
+        st.write("### Busiest Months by Program")
+        if prog_col and 'Month' in filtered_df.columns and hours_col and not filtered_df.empty:
+            chart_data = filtered_df.groupby(['Month', prog_col])[hours_col].sum().unstack().fillna(0)
+            st.bar_chart(chart_data)
+        else:
+            st.info("Date/Month entries unavailable.")
+
+    st.write("---")
+    
+    # Row 3 Charts & Aggregations
+    c5, c6 = st.columns(2)
+    with c5:
+        st.write("### How Volunteers Found Community Reach")
+        found_col = next((col for col in volunteers_df.columns if "find" in col.lower() or "how" in col.lower() or "source" in col.lower()), None) if not volunteers_df.empty else None
+        if found_col and not volunteers_df.empty:
+            source_data = volunteers_df
