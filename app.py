@@ -51,9 +51,6 @@ if not programs_df.empty:
 # --- SIDEBAR FILTERS WITH VALUE CHECKS ---
 st.sidebar.header("Global Filters")
 
-# --- SIDEBAR FILTERS WITH VALUE CHECKS ---
-st.sidebar.header("Global Filters")
-
 selected_progs = []
 if prog_col and not programs_df.empty:
     unique_progs = sorted(list(programs_df[prog_col].dropna().unique()))
@@ -68,6 +65,8 @@ selected_fys = []
 if fy_col and not programs_df.empty:
     unique_fys = sorted(list(programs_df[fy_col].dropna().unique()), reverse=True)
     selected_fys = st.sidebar.multiselect("Fiscal Year", unique_fys, default=unique_fys)
+
+# --- FILTER DATA DYNAMICALLY ---
 filtered_df = programs_df.copy() if not programs_df.empty else pd.DataFrame()
 if not filtered_df.empty:
     if selected_progs and prog_col:
@@ -103,16 +102,18 @@ with tabs[0]:
     with c1:
         st.write("### Hours by Program")
         if prog_col and hours_col and not filtered_df.empty:
-            chart_data = filtered_df.groupby(prog_col)[hours_col].sum().to_frame()
-            st.bar_chart(chart_data)
+            chart_data = filtered_df.groupby(prog_col)[hours_col].sum().reset_index()
+            chart_data.columns = ['Program', 'Hours']
+            st.bar_chart(chart_data, x='Program', y='Hours')
         else:
             st.info("Missing program tracking data.")
             
     with c2:
         st.write("### By Volunteer Type")
         if type_col and hours_col and not filtered_df.empty:
-            chart_data = filtered_df.groupby(type_col)[hours_col].sum().to_frame()
-            st.bar_chart(chart_data)
+            chart_data = filtered_df.groupby(type_col)[hours_col].sum().reset_index()
+            chart_data.columns = ['Type', 'Hours']
+            st.bar_chart(chart_data, x='Type', y='Hours')
         else:
             st.info("Volunteer type data unavailable in program history.")
 
@@ -121,8 +122,11 @@ with tabs[0]:
     with c3:
         st.write("### Trend by Fiscal Year")
         if fy_col and hours_col and not filtered_df.empty:
-            chart_data = filtered_df.groupby(fy_col)[hours_col].sum().to_frame()
-            st.line_chart(chart_data)
+            chart_data = filtered_df.groupby(fy_col)[hours_col].sum().reset_index()
+            chart_data.columns = ['Fiscal Year', 'Hours']
+            # Explicitly casting to string guarantees Altair treats it as a nominal label axis
+            chart_data['Fiscal Year'] = chart_data['Fiscal Year'].astype(str)
+            st.line_chart(chart_data, x='Fiscal Year', y='Hours')
         else:
             st.info("Fiscal Year tracking data unavailable.")
             
@@ -136,53 +140,4 @@ with tabs[0]:
 
     st.write("---")
     
-    # Row 3 Charts & Aggregations
-    c5, c6 = st.columns(2)
-    with c5:
-        st.write("### How Volunteers Found Community Reach")
-        found_col = next((col for col in volunteers_df.columns if "find" in col.lower() or "how" in col.lower() or "source" in col.lower()), None) if not volunteers_df.empty else None
-        if found_col and not volunteers_df.empty:
-            source_data = volunteers_df[found_col].value_counts().to_frame()
-            st.bar_chart(source_data)
-        else:
-            st.info("Add a 'How Found' column to your Volunteer Database to populate this chart.")
-
-    with c6:
-        st.write("### Top Volunteers by Total Hours")
-        vol_name_col = next((col for col in filtered_df.columns if "name" in col.lower() or "volunteer" in col.lower()), None) if not filtered_df.empty else None
-        if vol_name_col and hours_col and not filtered_df.empty:
-            top_vols = filtered_df.groupby(vol_name_col)[hours_col].sum().reset_index()
-            top_vols = top_vols.sort_values(by=hours_col, ascending=False).head(10)
-            st.dataframe(top_vols, use_container_width=True, hide_index=True)
-        else:
-            st.info("Volunteer names not found in the activity sheet logs.")
-
-# ================= TAB 2: VOLUNTEER LOOKUP =================
-with tabs[1]:
-    st.subheader("Volunteer Lookup")
-    
-    name_col = next((col for col in volunteers_df.columns if "name" in col.lower()), None) if not volunteers_df.empty else None
-    search_query = st.text_input("Search by name (type at least 2 characters):")
-    
-    if len(search_query) >= 2 and name_col:
-        mask = volunteers_df[name_col].str.contains(search_query, case=False, na=False)
-        results = volunteers_df[mask]
-        
-        if not results.empty:
-            st.success(f"Found {len(results)} profile(s):")
-            for idx, row in results.iterrows():
-                with st.expander(f"👤 {row[name_col]}"):
-                    st.dataframe(pd.DataFrame(row).T, hide_index=True)
-                    
-                    prog_vol_name = next((col for col in programs_df.columns if "name" in col.lower() or "volunteer" in col.lower()), None) if not programs_df.empty else None
-                    if prog_vol_name:
-                        history = programs_df[programs_df[prog_vol_name].str.lower() == row[name_col].lower()]
-                        st.write("**Service History:**")
-                        if not history.empty:
-                            st.dataframe(history, hide_index=True)
-                        else:
-                            st.info("No service logs found for this individual.")
-        else:
-            st.warning("No volunteers found matching that name.")
-    else:
-        st.info("Type a volunteer's name above to see their full profile and service history.")
+    #
