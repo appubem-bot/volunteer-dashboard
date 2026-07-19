@@ -6,7 +6,7 @@ st.title("Community Reach — Volunteer Dashboard")
 st.caption("Data from volunteer registration and service entry forms")
 
 # Google Sheets URL
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1_3Pd_ZTQTu46sOZ1-FmX7KEg5v4TOQy3xC1DM5840s8/edit?usp=sharing"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1PlV6VN3Bzix7Gh1NqiRzyl-kDtEV4Z4ouqAMWu6zN7Y/edit?usp=sharing"
 
 def load_data_via_pandas(url, sheet_name):
     csv_url = url.replace("/edit?usp=sharing", f"/export?format=csv&sheet={sheet_name.replace(' ', '+')}")
