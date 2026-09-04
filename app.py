@@ -18,58 +18,63 @@ def load_data_via_pandas(url, sheet_name):
         st.error(f"Error loading sheet '{sheet_name}': {e}")
         return pd.DataFrame()
 
-# Helper function to auto-assign Volunteer IDs and clean NaN entries
+# Helper function to auto-assign Volunteer IDs cleanly
 def assign_volunteer_ids(df, directory_df):
     if df.empty or directory_df.empty:
         return df
     
-    # Locate First and Last Name columns dynamically
+    # Locate First and Last Name columns
     first_col = next((c for c in df.columns if "first" in c.lower()), None)
     last_col = next((c for c in df.columns if "last" in c.lower()), None)
+    
+    # Strictly find the actual Volunteer ID column (exclude long survey questions)
+    dir_id_col = next((c for c in directory_df.columns if "volunteer id" in c.lower() or c.strip().lower() == "id"), None)
+    
     dir_first_col = next((c for c in directory_df.columns if "first" in c.lower()), None)
     dir_last_col = next((c for c in directory_df.columns if "last" in c.lower()), None)
-    dir_name_col = next((c for c in directory_df.columns if "name" in c.lower()), None)
-    dir_id_col = next((c for c in directory_df.columns if "id" in c.lower()), None)
+    dir_name_col = next((c for c in directory_df.columns if "name" in c.lower() and "first" not in c.lower() and "last" not in c.lower()), None)
 
     if first_col and last_col:
         df_copy = df.copy()
         
-        # 1. Clean and generate Full Name for matching
-        first_names = df_copy[first_col].fillna('').astype(str).str.strip()
-        last_names = df_copy[last_col].fillna('').astype(str).str.strip()
-        df_copy['Full Name'] = (first_names + " " + last_names).str.strip()
+        # Clean Full Name for main dataset
+        f_names = df_copy[first_col].fillna('').astype(str).str.strip()
+        l_names = df_copy[last_col].fillna('').astype(str).str.strip()
+        df_copy['Full Name'] = (f_names + " " + l_names).str.strip()
         
         dir_clean = directory_df.copy()
         
-        # Construct Full Name for Directory
+        # Clean Full Name for directory dataset
         if dir_first_col and dir_last_col:
-            d_first = dir_clean[dir_first_col].fillna('').astype(str).str.strip()
-            d_last = dir_clean[dir_last_col].fillna('').astype(str).str.strip()
-            dir_clean['Full Name'] = (d_first + " " + d_last).str.strip()
+            d_f = dir_clean[dir_first_col].fillna('').astype(str).str.strip()
+            d_l = dir_clean[dir_last_col].fillna('').astype(str).str.strip()
+            dir_clean['Full Name'] = (d_f + " " + d_l).str.strip()
         elif dir_name_col:
             dir_clean['Full Name'] = dir_clean[dir_name_col].fillna('').astype(str).str.strip()
         else:
             dir_clean['Full Name'] = ''
 
-        # 2. Assign unique IDs to directory entries if missing
+        # Filter out empty names from directory
+        dir_clean = dir_clean[dir_clean['Full Name'].str.len() > 1].copy()
+
+        # Generate sequential IDs (V-100, V-101...) if no valid ID column exists
         if dir_id_col and dir_id_col in dir_clean.columns:
-            dir_clean['Volunteer ID'] = dir_clean[dir_id_col].fillna(
-                pd.Series([f"V-{100+i}" for i in range(len(dir_clean))], index=dir_clean.index)
-            )
+            dir_clean['Volunteer ID'] = dir_clean[dir_id_col].astype(str).str.strip()
+            # Replace missing or generic text with sequential ID
+            invalid_ids = dir_clean['Volunteer ID'].isna() | dir_clean['Volunteer ID'].str.contains('nan|Social|Unassigned', case=False)
+            dir_clean.loc[invalid_ids, 'Volunteer ID'] = [f"V-{100+i}" for i in range(invalid_ids.sum())]
         else:
             dir_clean['Volunteer ID'] = [f"V-{100+i}" for i in range(len(dir_clean))]
 
-        # 3. Drop empty name entries to prevent NaN duplicates
-        dir_subset = dir_clean[dir_clean['Full Name'] != ''][['Full Name', 'Volunteer ID']].drop_duplicates(subset=['Full Name'])
+        # Drop duplicates on Full Name
+        dir_subset = dir_clean[['Full Name', 'Volunteer ID']].drop_duplicates(subset=['Full Name'])
         
-        # Merge ID onto the dataset
+        # Merge onto the main dataset
         merged = df_copy.merge(dir_subset, on='Full Name', how='left')
         merged['Volunteer ID'] = merged['Volunteer ID'].fillna('Unassigned')
-        
-        # Drop helper column
         merged = merged.drop(columns=['Full Name'])
         
-        # Reorder to place Volunteer ID as the first column
+        # Reorder to put Volunteer ID first
         cols = ['Volunteer ID'] + [c for c in merged.columns if c != 'Volunteer ID']
         return merged[cols]
     
@@ -233,12 +238,19 @@ with tabs[1]:
     else:
         search_query = st.text_input("Search by name or Volunteer ID (type at least 2 characters):").strip()
         
-        # Remove blank/NaN name rows to eliminate duplicate empty results
-        name_cols = [c for c in volunteers_df.columns if "first" in c.lower() or "last" in c.lower() or "name" in c.lower()]
-        valid_vols = volunteers_df.dropna(subset=name_cols, how='all').copy() if name_cols else volunteers_df.copy()
-        
         if len(search_query) >= 2:
-            search_cols = [c for c in valid_vols.columns if any(k in c.lower() for k in ["name", "first", "last", "id"])]
+            # Filter out entries where both first and last names are missing or empty
+            first_c = next((c for c in volunteers_df.columns if "first" in c.lower()), None)
+            last_c = next((c for c in volunteers_df.columns if "last" in c.lower()), None)
+            
+            valid_vols = volunteers_df.copy()
+            if first_c and last_c:
+                has_first = valid_vols[first_c].fillna('').astype(str).str.strip() != ''
+                has_last = valid_vols[last_c].fillna('').astype(str).str.strip() != ''
+                valid_vols = valid_vols[has_first | has_last]
+            
+            # Explicit search columns: First Name, Last Name, Volunteer ID
+            search_cols = [c for c in valid_vols.columns if c in [first_c, last_c, 'Volunteer ID']]
             if not search_cols:
                 search_cols = list(valid_vols.columns)
             
@@ -251,14 +263,14 @@ with tabs[1]:
             if not results.empty:
                 st.success(f"Found {len(results)} matching profile(s):")
                 for idx, row in results.iterrows():
-                    first = str(row.get('First Name', '')).replace('nan', '').strip()
-                    last = str(row.get('Last Name', '')).replace('nan', '').strip()
+                    first = str(row.get(first_c, '')).replace('nan', '').strip() if first_c else ''
+                    last = str(row.get(last_c, '')).replace('nan', '').strip() if last_c else ''
                     display_name = f"{first} {last}".strip()
                     
                     if not display_name:
-                        display_name = str(next((row[c] for c in name_cols if pd.notna(row[c])), "Unknown Volunteer"))
+                        continue
                     
-                    vol_id = row.get('Volunteer ID', 'Unassigned')
+                    vol_id = str(row.get('Volunteer ID', 'Unassigned')).strip()
                     
                     with st.expander(f"👤 {display_name} — ID: {vol_id}"):
                         st.metric("Volunteer ID", vol_id)
@@ -266,13 +278,20 @@ with tabs[1]:
                         st.dataframe(pd.DataFrame(row).T, hide_index=True)
                         
                         if not programs_df.empty:
-                            history_mask = pd.Series(False, index=programs_df.index)
-                            prog_cols = [c for c in programs_df.columns if any(k in c.lower() for k in ["name", "volunteer", "id"])]
+                            # Match service history using First + Last Name or ID
+                            prog_first = next((c for c in programs_df.columns if "first" in c.lower()), None)
+                            prog_last = next((c for c in programs_df.columns if "last" in c.lower()), None)
                             
-                            for p_col in prog_cols:
-                                history_mask |= programs_df[p_col].astype(str).str.contains(search_query, case=False, na=False)
-                                if display_name:
-                                    history_mask |= programs_df[p_col].astype(str).str.lower() == display_name.lower()
+                            if prog_first and prog_last:
+                                history_mask = (
+                                    (programs_df[prog_first].fillna('').astype(str).str.lower() == first.lower()) &
+                                    (programs_df[prog_last].fillna('').astype(str).str.lower() == last.lower())
+                                )
+                            else:
+                                history_mask = pd.Series(False, index=programs_df.index)
+                            
+                            if 'Volunteer ID' in programs_df.columns and vol_id != 'Unassigned':
+                                history_mask |= (programs_df['Volunteer ID'].astype(str) == vol_id)
                             
                             history = programs_df[history_mask]
                             
