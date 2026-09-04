@@ -220,46 +220,64 @@ with tabs[0]:
         st.info("No service logs found matching the active filter selections.")
 
 # ================= TAB 2: VOLUNTEER LOOKUP =================
+# ================= TAB 2: VOLUNTEER LOOKUP =================
 with tabs[1]:
     st.subheader("Volunteer Lookup")
     
     if volunteers_df.empty:
         st.error("The 'Volunteer Database' sheet is empty or couldn't be loaded.")
     else:
-        name_col = next((col for col in volunteers_df.columns if "name" in col.lower()), None)
-        search_query = st.text_input("Search by name (type at least 2 characters):")
+        search_query = st.text_input("Search by name or Volunteer ID (type at least 2 characters):").strip()
         
-        if not name_col:
-            st.warning("Could not automatically locate a column containing 'name' in your Volunteer Database.")
-            st.write("Available columns found in your sheet:", list(volunteers_df.columns))
-        else:
-            if len(search_query) >= 2:
-                mask = volunteers_df[name_col].str.contains(search_query, case=False, na=False)
-                results = volunteers_df[mask]
-                
-                if not results.empty:
-                    st.success(f"Found {len(results)} profile(s):")
-                    for idx, row in results.iterrows():
-                        # Fetch the Volunteer ID dynamically from the row
-                        vol_id = row.get('Volunteer ID', 'Unassigned')
+        if len(search_query) >= 2:
+            # Build a search mask that checks First Name, Last Name, Full Name, and Volunteer ID
+            search_cols = [c for c in volunteers_df.columns if any(k in c.lower() for k in ["name", "first", "last", "id"])]
+            
+            if not search_cols:
+                # Fallback to search all text columns if specific headers aren't caught
+                search_cols = volunteers_df.columns
+            
+            # Search across all relevant columns
+            mask = pd.Series(False, index=volunteers_df.index)
+            for col in search_cols:
+                mask |= volunteers_df[col].astype(str).str.contains(search_query, case=False, na=False)
+            
+            results = volunteers_df[mask]
+            
+            if not results.empty:
+                st.success(f"Found {len(results)} matching profile(s):")
+                for idx, row in results.iterrows():
+                    # Safely construct display name
+                    first = str(row.get('First Name', '')).strip()
+                    last = str(row.get('Last Name', '')).strip()
+                    display_name = f"{first} {last}".strip() if (first or last) else str(row.values[0])
+                    
+                    vol_id = row.get('Volunteer ID', row.get('ID', 'Unassigned'))
+                    
+                    with st.expander(f"👤 {display_name} — ID: {vol_id}"):
+                        st.metric("Volunteer ID", vol_id)
                         
-                        # Shows ID right in the expander header bar
-                        with st.expander(f"👤 {row[name_col]} — ID: {vol_id}"):
+                        st.write("**Profile Details:**")
+                        st.dataframe(pd.DataFrame(row).T, hide_index=True)
+                        
+                        # Fetch service history matching full name or first/last
+                        if not programs_df.empty:
+                            history_mask = pd.Series(False, index=programs_df.index)
+                            prog_cols = [c for c in programs_df.columns if any(k in c.lower() for k in ["name", "volunteer", "id"])]
                             
-                            # Shows a visual badge for the ID inside the expander
-                            st.metric("Volunteer ID", vol_id)
+                            for p_col in prog_cols:
+                                history_mask |= programs_df[p_col].astype(str).str.contains(search_query, case=False, na=False)
+                                if display_name:
+                                    history_mask |= programs_df[p_col].astype(str).str.lower() == display_name.lower()
                             
-                            st.dataframe(pd.DataFrame(row).T, hide_index=True)
+                            history = programs_df[history_mask]
                             
-                            prog_vol_name = next((col for col in programs_df.columns if "name" in col.lower() or "volunteer" in col.lower()), None) if not programs_df.empty else None
-                            if prog_vol_name:
-                                history = programs_df[programs_df[prog_vol_name].str.lower() == str(row[name_col]).lower()]
-                                st.write("**Service History:**")
-                                if not history.empty:
-                                    st.dataframe(history, hide_index=True)
-                                else:
-                                    st.info("No service logs found for this individual.")
-                else:
-                    st.warning("No volunteers found matching that name.")
+                            st.write("**Service History:**")
+                            if not history.empty:
+                                st.dataframe(history, hide_index=True)
+                            else:
+                                st.info("No service logs found matching this individual.")
             else:
-                st.info("Type a volunteer's name above to see their full profile and service history.")
+                st.warning(f"No volunteer records found matching '{search_query}'.")
+        else:
+            st.info("Type a volunteer's name or ID above to pull up their record.")
