@@ -18,60 +18,69 @@ def load_data_via_pandas(url, sheet_name):
         st.error(f"Error loading sheet '{sheet_name}': {e}")
         return pd.DataFrame()
 
-# Helper function to auto-assign Volunteer ID in Python
+# Helper function to auto-assign Volunteer IDs and clean NaN entries
 def assign_volunteer_ids(df, directory_df):
     if df.empty or directory_df.empty:
         return df
     
- # Helper function to auto-assign Volunteer ID in Python
-def assign_volunteer_ids(df, directory_df):
-    if df.empty or directory_df.empty:
-        return df
-    
-    # Locate First and Last Name columns dynamically in the target sheet
+    # Locate First and Last Name columns dynamically
     first_col = next((c for c in df.columns if "first" in c.lower()), None)
     last_col = next((c for c in df.columns if "last" in c.lower()), None)
-    
-    # Locate Full Name (or Name) and ID columns in the Directory sheet
+    dir_first_col = next((c for c in directory_df.columns if "first" in c.lower()), None)
+    dir_last_col = next((c for c in directory_df.columns if "last" in c.lower()), None)
     dir_name_col = next((c for c in directory_df.columns if "name" in c.lower()), None)
     dir_id_col = next((c for c in directory_df.columns if "id" in c.lower()), None)
 
-    if first_col and last_col and dir_name_col and dir_id_col:
+    if first_col and last_col:
         df_copy = df.copy()
-        df_copy['Full Name'] = df_copy[first_col].astype(str).str.strip() + " " + df_copy[last_col].astype(str).str.strip()
+        
+        # 1. Clean and generate Full Name for matching
+        first_names = df_copy[first_col].fillna('').astype(str).str.strip()
+        last_names = df_copy[last_col].fillna('').astype(str).str.strip()
+        df_copy['Full Name'] = (first_names + " " + last_names).str.strip()
         
         dir_clean = directory_df.copy()
-        dir_clean['Full Name'] = dir_clean[dir_name_col].astype(str).str.strip()
         
-        # Keep only Full Name and the ID column from directory
-        dir_subset = dir_clean[['Full Name', dir_id_col]].drop_duplicates(subset=['Full Name'])
+        # Construct Full Name for Directory
+        if dir_first_col and dir_last_col:
+            d_first = dir_clean[dir_first_col].fillna('').astype(str).str.strip()
+            d_last = dir_clean[dir_last_col].fillna('').astype(str).str.strip()
+            dir_clean['Full Name'] = (d_first + " " + d_last).str.strip()
+        elif dir_name_col:
+            dir_clean['Full Name'] = dir_clean[dir_name_col].fillna('').astype(str).str.strip()
+        else:
+            dir_clean['Full Name'] = ''
+
+        # 2. Assign unique IDs to directory entries if missing
+        if dir_id_col and dir_id_col in dir_clean.columns:
+            dir_clean['Volunteer ID'] = dir_clean[dir_id_col].fillna(
+                pd.Series([f"V-{100+i}" for i in range(len(dir_clean))], index=dir_clean.index)
+            )
+        else:
+            dir_clean['Volunteer ID'] = [f"V-{100+i}" for i in range(len(dir_clean))]
+
+        # 3. Drop empty name entries to prevent NaN duplicates
+        dir_subset = dir_clean[dir_clean['Full Name'] != ''][['Full Name', 'Volunteer ID']].drop_duplicates(subset=['Full Name'])
         
-        # Merge
+        # Merge ID onto the dataset
         merged = df_copy.merge(dir_subset, on='Full Name', how='left')
+        merged['Volunteer ID'] = merged['Volunteer ID'].fillna('Unassigned')
         
-        # If the column was renamed during merge (e.g. dir_id_col + '_x'), grab it safely
-        actual_id_col = dir_id_col if dir_id_col in merged.columns else [c for c in merged.columns if dir_id_col in c][0]
+        # Drop helper column
+        merged = merged.drop(columns=['Full Name'])
         
-        merged['Volunteer ID'] = merged[actual_id_col].fillna('Unassigned')
-        
-        # Clean up temporary and extra ID columns
-        cols_to_drop = ['Full Name']
-        if actual_id_col != 'Volunteer ID':
-            cols_to_drop.append(actual_id_col)
-        merged = merged.drop(columns=[c for c in cols_to_drop if c in merged.columns])
-        
-        # Move Volunteer ID to first column position
+        # Reorder to place Volunteer ID as the first column
         cols = ['Volunteer ID'] + [c for c in merged.columns if c != 'Volunteer ID']
         return merged[cols]
     
-    return df
     return df
 
 # --- 1. LOAD DATA ---
 volunteers_df = load_data_via_pandas(SHEET_URL, "Volunteer Database")
 programs_df = load_data_via_pandas(SHEET_URL, "Program Database")
 
-# Attach Volunteer IDs automatically using Python
+# Apply ID assignment to both DataFrames
+volunteers_df = assign_volunteer_ids(volunteers_df, volunteers_df)
 programs_df = assign_volunteer_ids(programs_df, volunteers_df)
 
 # --- 2. DYNAMIC COLUMN MAPPING ---
@@ -85,7 +94,6 @@ if not programs_df.empty:
     fy_col = next((col for col in programs_df.columns if "fiscal" in col.lower() or "fy" in col.lower()), None)
     type_col = next((col for col in programs_df.columns if "type" in col.lower() or "status" in col.lower()), None)
 
-    # Force format conversions safely
     if hours_col: 
         programs_df[hours_col] = pd.to_numeric(programs_df[hours_col], errors='coerce').fillna(0)
     if value_col: 
@@ -147,7 +155,6 @@ with tabs[0]:
     
     st.write("---")
     
-    # Row 1 Charts
     c1, c2 = st.columns(2)
     with c1:
         st.write("### Hours by Program")
@@ -167,7 +174,6 @@ with tabs[0]:
         else:
             st.info("Volunteer type data unavailable in program history.")
 
-    # Row 2 Charts
     c3, c4 = st.columns(2)
     with c3:
         st.write("### Trend by Fiscal Year")
@@ -189,7 +195,6 @@ with tabs[0]:
 
     st.write("---")
     
-    # Row 3 Charts & Aggregations
     c5, c6 = st.columns(2)
     with c5:
         st.write("### How Volunteers Found Community Reach")
@@ -220,7 +225,6 @@ with tabs[0]:
         st.info("No service logs found matching the active filter selections.")
 
 # ================= TAB 2: VOLUNTEER LOOKUP =================
-# ================= TAB 2: VOLUNTEER LOOKUP =================
 with tabs[1]:
     st.subheader("Volunteer Lookup")
     
@@ -229,38 +233,38 @@ with tabs[1]:
     else:
         search_query = st.text_input("Search by name or Volunteer ID (type at least 2 characters):").strip()
         
+        # Remove blank/NaN name rows to eliminate duplicate empty results
+        name_cols = [c for c in volunteers_df.columns if "first" in c.lower() or "last" in c.lower() or "name" in c.lower()]
+        valid_vols = volunteers_df.dropna(subset=name_cols, how='all').copy() if name_cols else volunteers_df.copy()
+        
         if len(search_query) >= 2:
-            # Build a search mask that checks First Name, Last Name, Full Name, and Volunteer ID
-            search_cols = [c for c in volunteers_df.columns if any(k in c.lower() for k in ["name", "first", "last", "id"])]
-            
+            search_cols = [c for c in valid_vols.columns if any(k in c.lower() for k in ["name", "first", "last", "id"])]
             if not search_cols:
-                # Fallback to search all text columns if specific headers aren't caught
-                search_cols = volunteers_df.columns
+                search_cols = list(valid_vols.columns)
             
-            # Search across all relevant columns
-            mask = pd.Series(False, index=volunteers_df.index)
+            mask = pd.Series(False, index=valid_vols.index)
             for col in search_cols:
-                mask |= volunteers_df[col].astype(str).str.contains(search_query, case=False, na=False)
+                mask |= valid_vols[col].astype(str).str.contains(search_query, case=False, na=False)
             
-            results = volunteers_df[mask]
+            results = valid_vols[mask]
             
             if not results.empty:
                 st.success(f"Found {len(results)} matching profile(s):")
                 for idx, row in results.iterrows():
-                    # Safely construct display name
-                    first = str(row.get('First Name', '')).strip()
-                    last = str(row.get('Last Name', '')).strip()
-                    display_name = f"{first} {last}".strip() if (first or last) else str(row.values[0])
+                    first = str(row.get('First Name', '')).replace('nan', '').strip()
+                    last = str(row.get('Last Name', '')).replace('nan', '').strip()
+                    display_name = f"{first} {last}".strip()
                     
-                    vol_id = row.get('Volunteer ID', row.get('ID', 'Unassigned'))
+                    if not display_name:
+                        display_name = str(next((row[c] for c in name_cols if pd.notna(row[c])), "Unknown Volunteer"))
+                    
+                    vol_id = row.get('Volunteer ID', 'Unassigned')
                     
                     with st.expander(f"👤 {display_name} — ID: {vol_id}"):
                         st.metric("Volunteer ID", vol_id)
-                        
                         st.write("**Profile Details:**")
                         st.dataframe(pd.DataFrame(row).T, hide_index=True)
                         
-                        # Fetch service history matching full name or first/last
                         if not programs_df.empty:
                             history_mask = pd.Series(False, index=programs_df.index)
                             prog_cols = [c for c in programs_df.columns if any(k in c.lower() for k in ["name", "volunteer", "id"])]
