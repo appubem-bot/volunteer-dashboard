@@ -240,7 +240,15 @@ with tabs[1]:
                 if not results.empty:
                     st.success(f"Found {len(results)} profile(s):")
                     for idx, row in results.iterrows():
-                        with st.expander(f"👤 {row[name_col]}"):
+                        # Fetch the Volunteer ID dynamically from the row
+                        vol_id = row.get('Volunteer ID', 'Unassigned')
+                        
+                        # Shows ID right in the expander header bar
+                        with st.expander(f"👤 {row[name_col]} — ID: {vol_id}"):
+                            
+                            # Shows a visual badge for the ID inside the expander
+                            st.metric("Volunteer ID", vol_id)
+                            
                             st.dataframe(pd.DataFrame(row).T, hide_index=True)
                             
                             prog_vol_name = next((col for col in programs_df.columns if "name" in col.lower() or "volunteer" in col.lower()), None) if not programs_df.empty else None
