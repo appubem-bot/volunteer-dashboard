@@ -23,9 +23,16 @@ def assign_volunteer_ids(df, directory_df):
     if df.empty or directory_df.empty:
         return df
     
-    # Locate First and Last Name columns dynamically
+ # Helper function to auto-assign Volunteer ID in Python
+def assign_volunteer_ids(df, directory_df):
+    if df.empty or directory_df.empty:
+        return df
+    
+    # Locate First and Last Name columns dynamically in the target sheet
     first_col = next((c for c in df.columns if "first" in c.lower()), None)
     last_col = next((c for c in df.columns if "last" in c.lower()), None)
+    
+    # Locate Full Name (or Name) and ID columns in the Directory sheet
     dir_name_col = next((c for c in directory_df.columns if "name" in c.lower()), None)
     dir_id_col = next((c for c in directory_df.columns if "id" in c.lower()), None)
 
@@ -36,16 +43,28 @@ def assign_volunteer_ids(df, directory_df):
         dir_clean = directory_df.copy()
         dir_clean['Full Name'] = dir_clean[dir_name_col].astype(str).str.strip()
         
-        merged = df_copy.merge(dir_clean[['Full Name', dir_id_col]], on='Full Name', how='left')
-        merged['Volunteer ID'] = merged[dir_id_col].fillna('Unassigned')
+        # Keep only Full Name and the ID column from directory
+        dir_subset = dir_clean[['Full Name', dir_id_col]].drop_duplicates(subset=['Full Name'])
         
-        # Clean up temporary columns
-        merged = merged.drop(columns=['Full Name', dir_id_col])
+        # Merge
+        merged = df_copy.merge(dir_subset, on='Full Name', how='left')
+        
+        # If the column was renamed during merge (e.g. dir_id_col + '_x'), grab it safely
+        actual_id_col = dir_id_col if dir_id_col in merged.columns else [c for c in merged.columns if dir_id_col in c][0]
+        
+        merged['Volunteer ID'] = merged[actual_id_col].fillna('Unassigned')
+        
+        # Clean up temporary and extra ID columns
+        cols_to_drop = ['Full Name']
+        if actual_id_col != 'Volunteer ID':
+            cols_to_drop.append(actual_id_col)
+        merged = merged.drop(columns=[c for c in cols_to_drop if c in merged.columns])
         
         # Move Volunteer ID to first column position
         cols = ['Volunteer ID'] + [c for c in merged.columns if c != 'Volunteer ID']
         return merged[cols]
     
+    return df
     return df
 
 # --- 1. LOAD DATA ---
